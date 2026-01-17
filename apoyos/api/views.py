@@ -43,13 +43,25 @@ class ProgramaSocialViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Filtrar solo programas activos para ciudadanos
+        Filtrar programas según el rol del usuario:
+        - Ciudadanos: solo programas activos
+        - Funcionarios: solo programas de su dependencia
+        - Administradores: todos los programas
         """
         queryset = super().get_queryset()
+        user = self.request.user
 
         # Si es ciudadano, solo mostrar programas activos
-        if hasattr(self.request.user, "rol") and self.request.user.rol == "CIUDADANO":
+        if hasattr(user, "rol") and user.rol == "CIUDADANO":
             queryset = queryset.filter(esta_activo=True)
+        
+        # Si es funcionario, solo mostrar programas de su dependencia
+        elif hasattr(user, "rol") and user.rol == "FUNCIONARIO":
+            if hasattr(user, 'funcionario') and user.funcionario:
+                queryset = queryset.filter(dependencia=user.funcionario.dependencia)
+            else:
+                # Si no tiene perfil de funcionario asociado, no mostrar nada
+                queryset = queryset.none()
 
         return queryset
 
@@ -91,3 +103,21 @@ class ProgramaSocialViewSet(viewsets.ModelViewSet):
             serializer.save(dependencia=user.funcionario.dependencia)
         else:
             serializer.save()
+
+    def perform_destroy(self, instance):
+        """
+        Validar que el funcionario solo elimine programas de su dependencia
+        """
+        user = self.request.user
+
+        # Si es funcionario, verificar que el programa pertenezca a su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            if instance.dependencia != user.funcionario.dependencia:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("No tienes permiso para eliminar programas de otra dependencia.")
+        
+        instance.delete()

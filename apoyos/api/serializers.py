@@ -32,6 +32,10 @@ class ProgramaSocialCreateUpdateSerializer(serializers.ModelSerializer):
         model = ProgramaSocial
         fields = ["id", "dependencia", "nombre", "descripcion", "esta_activo", "imagen", "destacado", "categoria"]
         read_only_fields = ["id"]
+        # Hacer dependencia opcional para que funcionarios no tengan que enviarla
+        extra_kwargs = {
+            'dependencia': {'required': False, 'allow_null': True}
+        }
 
 
 class ProgramaSocialListSerializer(serializers.ModelSerializer):

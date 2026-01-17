@@ -36,6 +36,82 @@ class TramiteCatalogoViewSet(viewsets.ModelViewSet):
             return TramiteCatalogoListSerializer
         return TramiteCatalogoSerializer
 
+    def get_queryset(self):
+        """
+        Filtrar trámites según el rol del usuario:
+        - Funcionarios: solo trámites de su dependencia
+        - Administradores y otros: todos los trámites
+        """
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        # Si es funcionario, solo mostrar trámites de su dependencia
+        if hasattr(user, "rol") and user.rol == "FUNCIONARIO":
+            if hasattr(user, 'funcionario') and user.funcionario:
+                queryset = queryset.filter(dependencia=user.funcionario.dependencia)
+            else:
+                # Si no tiene perfil de funcionario asociado, no mostrar nada
+                queryset = queryset.none()
+
+        return queryset
+
+    def perform_create(self, serializer):
+        """
+        Validar que el funcionario solo cree trámites para su dependencia
+        """
+        user = self.request.user
+        
+        # Si es funcionario, forzar su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            serializer.save(dependencia=user.funcionario.dependencia)
+        else:
+            # Administradores pueden guardar tal cual viene (con la dependencia elegida)
+            serializer.save()
+
+    def perform_update(self, serializer):
+        """
+        Validar que el funcionario solo edite trámites de su dependencia
+        """
+        user = self.request.user
+        instance = self.get_object()
+
+        # Si es funcionario, verificar que el trámite pertenezca a su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            if instance.dependencia != user.funcionario.dependencia:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("No tienes permiso para editar trámites de otra dependencia.")
+            
+            # Al guardar, asegurarnos de que no cambie la dependencia
+            serializer.save(dependencia=user.funcionario.dependencia)
+        else:
+            serializer.save()
+
+    def perform_destroy(self, instance):
+        """
+        Validar que el funcionario solo elimine trámites de su dependencia
+        """
+        user = self.request.user
+
+        # Si es funcionario, verificar que el trámite pertenezca a su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            if instance.dependencia != user.funcionario.dependencia:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("No tienes permiso para eliminar trámites de otra dependencia.")
+        
+        instance.delete()
+
 
 class RequisitoViewSet(viewsets.ModelViewSet):
     """

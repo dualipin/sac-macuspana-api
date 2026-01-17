@@ -75,6 +75,10 @@ class TramiteCatalogoSerializer(serializers.ModelSerializer):
             "cantidad_requisitos",
             "destacado",
         ]
+        # Hacer dependencia opcional para que funcionarios no tengan que enviarla
+        extra_kwargs = {
+            'dependencia': {'required': False, 'allow_null': True}
+        }
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
