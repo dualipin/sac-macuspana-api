@@ -97,6 +97,35 @@ class SolicitudViewSet(viewsets.ModelViewSet):
         ciudadano = self.request.user.ciudadano
         serializer.save(ciudadano=ciudadano)
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Permitir que ciudadanos eliminen sus propias solicitudes pendientes
+        DELETE /api/tramites/solicitudes/{id}/
+        """
+        solicitud = self.get_object()
+        user = request.user
+
+        # Verificar permisos
+        if user.rol == Roles.CIUDADANO:
+            # Ciudadanos solo pueden eliminar sus propias solicitudes pendientes
+            if solicitud.ciudadano.usuario != user:
+                return Response(
+                    {"detail": "No puedes eliminar una solicitud que no es tuya"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if solicitud.estatus != EstatusSolicitud.PENDIENTE:
+                return Response(
+                    {"detail": "Solo puedes eliminar solicitudes en estado pendiente"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif user.rol not in [Roles.ADMINISTRADOR, Roles.FUNCIONARIO]:
+            return Response(
+                {"detail": "No tienes permisos para eliminar solicitudes"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
     @action(
         detail=True,
         methods=["post"],
