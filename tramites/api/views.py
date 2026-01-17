@@ -4,6 +4,7 @@ from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.http import FileResponse
 import os
 
 from tramites.models import Solicitud, DocumentoSolicitud, SolicitudAsignacion
@@ -68,20 +69,26 @@ class SolicitudViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filtrar solicitudes según el rol del usuario
+        - ADMINISTRADOR: Ve todas las solicitudes
+        - FUNCIONARIO: Ve solicitudes de su dependencia + asignadas a él
+        - CIUDADANO: Ve solo sus propias solicitudes
         """
         queryset = super().get_queryset()
         user = self.request.user
 
-        if user.rol == Roles.CIUDADANO:
+        if user.rol == Roles.ADMINISTRADOR:
+            # Administradores ven todas las solicitudes
+            return queryset
+        elif user.rol == Roles.CIUDADANO:
             # Ciudadanos solo ven sus propias solicitudes
-            queryset = queryset.filter(ciudadano__usuario=user)
+            return queryset.filter(ciudadano__usuario=user)
         elif user.rol == Roles.FUNCIONARIO:
             # Funcionarios ven:
             # 1. Solicitudes de su dependencia (por trámite o programa)
             # 2. Solicitudes asignadas explícitamente a ellos
             if hasattr(user, "funcionario"):
                 dependencia = user.funcionario.dependencia
-                queryset = queryset.filter(
+                return queryset.filter(
                     Q(tramite_tipo__dependencia=dependencia)
                     | Q(programa_social__dependencia=dependencia)
                     | Q(asignaciones__funcionario=user, asignaciones__activo=True)
@@ -304,14 +311,13 @@ class SolicitudViewSet(viewsets.ModelViewSet):
     )
     def solicitudes_asignadas(self, request):
         """
-        Endpoint para que funcionarios vean solicitudes asignadas a ellos
+        Endpoint para que funcionarios y administradores vean solicitudes
+        - ADMINISTRADOR: Ve todas las solicitudes
+        - FUNCIONARIO: Ve solicitudes de su dependencia + asignadas a él
         GET /api/tramites/solicitudes/solicitudes_asignadas/
         """
-        asignaciones = SolicitudAsignacion.objects.filter(
-            funcionario=request.user, activo=True
-        ).values_list("solicitud_id", flat=True)
-
-        solicitudes = self.get_queryset().filter(id__in=asignaciones)
+        # Usar el queryset del viewset que ya tiene la lógica de filtrado por rol
+        solicitudes = self.get_queryset()
 
         page = self.paginate_queryset(solicitudes)
         if page is not None:
@@ -370,6 +376,46 @@ class DocumentoSolicitudViewSet(viewsets.ModelViewSet):
                 )
 
         serializer.save()
+
+    @action(detail=True, methods=["get"], url_path="descargar")
+    def descargar(self, request, pk=None):
+        """
+        Descargar archivo del documento
+        """
+        documento = self.get_object()
+
+        # Verificar que el archivo existe
+        if not documento.archivo:
+            return Response(
+                {"error": "No hay archivo para descargar"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Verificar que el usuario tiene permiso para descargar
+        if request.user.rol == Roles.CIUDADANO:
+            if documento.solicitud.ciudadano.usuario != request.user:
+                from rest_framework.exceptions import PermissionDenied
+
+                raise PermissionDenied(
+                    "No puede descargar documentos de solicitudes de otros ciudadanos"
+                )
+
+        file_path = documento.archivo.path
+
+        # Verificar que el archivo existe en el sistema de archivos
+        if not os.path.exists(file_path):
+            return Response(
+                {"error": "Archivo no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Abrir el archivo y retornarlo
+        file = open(file_path, "rb")
+        response = FileResponse(file, as_attachment=True)
+        response["Content-Disposition"] = (
+            f'attachment; filename="{documento.archivo.name}"'
+        )
+        return response
 
 
 class SolicitudAsignacionViewSet(viewsets.ModelViewSet):

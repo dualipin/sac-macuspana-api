@@ -1,6 +1,33 @@
 from rest_framework import serializers
 from tramites.models import Solicitud, DocumentoSolicitud, SolicitudAsignacion
 from core.choices import EstatusSolicitud, Roles
+from ciudadanos.api.serializers import CiudadanoSerializer
+
+
+class RequisitoSimpleSerializer(serializers.Serializer):
+    """Serializer simple para requisito (anidado)"""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
+    es_obligatorio = serializers.BooleanField()
+    requiere_documento = serializers.BooleanField()
+
+
+class DependenciaSimpleSerializer(serializers.Serializer):
+    """Serializer simple para dependencia (anidado)"""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
+
+
+class ProgramaSocialSimpleSerializer(serializers.Serializer):
+    """Serializer simple para programa social (anidado)"""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
+    descripcion = serializers.CharField()
+    dependencia = DependenciaSimpleSerializer(read_only=True)
+    requisitos_especificos = RequisitoSimpleSerializer(many=True, read_only=True)
 
 
 class DocumentoSolicitudSerializer(serializers.ModelSerializer):
@@ -8,6 +35,7 @@ class DocumentoSolicitudSerializer(serializers.ModelSerializer):
     Serializer para documentos de solicitudes
     """
 
+    requisito = RequisitoSimpleSerializer(read_only=True)
     nombre_requisito = serializers.CharField(source="requisito.nombre", read_only=True)
     url_archivo = serializers.SerializerMethodField()
 
@@ -104,6 +132,8 @@ class SolicitudSerializer(serializers.ModelSerializer):
     Serializer completo para solicitudes con documentos y asignaciones
     """
 
+    ciudadano = CiudadanoSerializer(read_only=True)
+    programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     documentos = DocumentoSolicitudSerializer(many=True, read_only=True)
     asignaciones = SolicitudAsignacionSerializer(many=True, read_only=True)
     nombre_ciudadano = serializers.SerializerMethodField()
@@ -241,6 +271,8 @@ class SolicitudListSerializer(serializers.ModelSerializer):
     Serializer ligero para listados
     """
 
+    ciudadano = CiudadanoSerializer(read_only=True)
+    programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     nombre_ciudadano = serializers.SerializerMethodField()
     nombre_tramite = serializers.CharField(source="tramite_tipo.nombre", read_only=True)
     nombre_programa = serializers.CharField(
@@ -261,6 +293,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "folio",
+            "ciudadano",
             "nombre_ciudadano",
             "nombre_tramite",
             "nombre_programa",

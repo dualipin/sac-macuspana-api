@@ -37,18 +37,24 @@ class Solicitud(SoftDeleteModel):
 
     def verificar_documentacion_completa(self):
         """
-        Verifica si todos los requisitos tienen documentos adjuntos
+        Verifica si todos los requisitos que requieren documentos tienen documentos adjuntos
         """
         # Obtener requisitos del tramite o programa social
         if self.programa_social:
-            requisitos = self.programa_social.requisitos_especificos.all()
+            requisitos = self.programa_social.requisitos_especificos.filter(
+                requiere_documento=True
+            )
         else:
-            requisitos = self.tramite_tipo.requisitos.all()
+            requisitos = self.tramite_tipo.requisitos.filter(requiere_documento=True)
+
+        # Si no hay requisitos que requieran documento, la documentación está completa
+        if not requisitos.exists():
+            return True
 
         requisitos_ids = set(requisitos.values_list("id", flat=True))
         documentos_ids = set(self.documentos.values_list("requisito_id", flat=True))
 
-        return requisitos_ids == documentos_ids and len(requisitos_ids) > 0
+        return requisitos_ids == documentos_ids
 
 
 class DocumentoSolicitud(models.Model):
