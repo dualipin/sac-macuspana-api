@@ -1,117 +1,160 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from dependencias.models import Dependencia
-from apoyos.models import ProgramaSocial
 from servicios.models import TramiteCatalogo, Requisito
-from core.choices import TipoTramites
-
+from apoyos.models import ProgramaSocial
+from core.choices import TipoTramites, TipoDependencia
 
 class Command(BaseCommand):
-    help = 'Puebla el catálogo de trámites, programas sociales y sus requisitos para pruebas'
+    help = 'Pobla la base de datos con catálogos esenciales para escenarios de demostración usando dependencias reales'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write(self.style.SUCCESS('Iniciando carga de catálogos de prueba...'))
+        self.stdout.write('Iniciando proceso de sembrado de datos...')
 
         with transaction.atomic():
-            # 1. Obtener dependencias necesarias (basadas en tu importación previa)
-            # Usamos get_or_create por si acaso, pero idealmente ya existen
-            def_finanzas, _ = Dependencia.objects.get_or_create(nombre="DIRECCIÓN DE FINANZAS")
-            def_sapam, _ = Dependencia.objects.get_or_create(
-                nombre="DIRECCIÓN DEL SISTEMA DE AGUA POTABLE Y ALCANTARILLADO DE MACUSPANA", siglas="SAPAM")
-            def_obras, _ = Dependencia.objects.get_or_create(
-                nombre="DIRECCIÓN DE OBRAS, ORDENAMIENTO TERRITORIAL Y SERVICIOS MUNICIPALES")
-            def_vivienda, _ = Dependencia.objects.get_or_create(
-                nombre="DIRECCION DEL INSTITUTO DE VIVIENDA DE MACUSPANA")
-            def_educacion, _ = Dependencia.objects.get_or_create(nombre="DIRECCION DEL EDUCACION CULTURA Y RECREACION")
-            def_atencion, _ = Dependencia.objects.get_or_create(nombre="DIRECCIÓN DE ATENCION CIUDADANA")
+            # 1. Mapeo de dependencias requeridas usando los nombres EXACTOS del CSV
+            # CSV ID 13: DIRECCIÓN DE ATENCION CIUDADANA
+            # CSV ID 25: COORD. DE TRANSPARENCIA 
+            # CSV ID 8: DIRECCIÓN DE OBRAS, ORDENAMIENTO TERRITORIAL Y SERVICIOS MUNICIPALES
+            # CSV ID 23: COORD. DEL DIF
 
-            # 2. Crear Trámites de Ejemplo (Servicios Generales y Administrativos)
-            # Estos representan los "40 tipos de solicitudes" mencionados en el anteproyecto [cite: 78]
+            deps_config = {
+                'atencion': {
+                    'nombre': 'DIRECCIÓN DE ATENCION CIUDADANA',
+                    'tipo': TipoDependencia.DIRECCION,
+                    'defaults': {} 
+                },
+                'transparencia': {
+                    'nombre': 'COORD. DE TRANSPARENCIA ', # Nota: El CSV tiene un espacio al final
+                    'tipo': TipoDependencia.COORDINACION,
+                    'defaults': {}
+                },
+                'servicios': {
+                    'nombre': 'DIRECCIÓN DE OBRAS, ORDENAMIENTO TERRITORIAL Y SERVICIOS MUNICIPALES',
+                    'tipo': TipoDependencia.DIRECCION,
+                    'defaults': {}
+                },
+                'dif': {
+                    'nombre': 'COORD. DEL DIF',
+                    'tipo': TipoDependencia.COORDINACION,
+                    'defaults': {'siglas': 'DIF'}
+                }
+            }
+
+            dependencias = {}
+            for key, config in deps_config.items():
+                # Buscamos o creamos, pero asumiendo que el seed principal de dependencias ya corrió o lo creamos aquí
+                defaults = {'tipo': config['tipo']}
+                defaults.update(config['defaults'])
+                
+                dep, created = Dependencia.objects.get_or_create(
+                    nombre=config['nombre'],
+                    defaults=defaults
+                )
+                dependencias[key] = dep
+                if created:
+                    self.stdout.write(self.style.SUCCESS(f'Dependencia creada: {dep.nombre}'))
+                else:
+                    self.stdout.write(f'Dependencia encontrada: {dep.nombre}')
+
+            # 2. Crear Trámites Catalogo vinculados a las dependencias reales
             tramites_data = [
-                (def_sapam, "Pago de Derechos de Agua", TipoTramites.TRAMITE_ADMINISTRATIVO,
-                 "Trámite para el pago bimestral o anual del servicio de agua potable."),
-                (def_sapam, "Reporte de Fuga de Agua", TipoTramites.SOLICITUD_GENERAL,
-                 "Reporte de fugas en la red pública de Macuspana."),
-                (def_finanzas, "Pago de Impuesto Predial", TipoTramites.TRAMITE_ADMINISTRATIVO,
-                 "Cumplimiento de la obligación fiscal sobre bienes inmuebles."),
-                (def_obras, "Solicitud de Bacheo", TipoTramites.SOLICITUD_GENERAL,
-                 "Petición para la reparación de baches en calles y avenidas."),
-                (def_obras, "Reparación de Luminarias", TipoTramites.SOLICITUD_GENERAL,
-                 "Reporte de fallas en el alumbrado público municipal."),
+                {
+                    'nombre': 'Atención Ciudadana y Dudas',
+                    'dependencia': dependencias['atencion'],
+                    'tipo': TipoTramites.SOLICITUD_GENERAL,
+                    'descripcion': 'Canal para dudas generales, quejas simples o solicitudes que no tienen un trámite específico. Su solicitud será canalizada al área correspondiente.',
+                    'requisitos': [] 
+                },
+                {
+                    'nombre': 'Solicitud de Acceso a la Información',
+                    'dependencia': dependencias['transparencia'],
+                    'tipo': TipoTramites.TRAMITE_ADMINISTRATIVO,
+                    'descripcion': 'Solicitud formal de información pública gubernamental según la ley de transparencia.',
+                    'requisitos': [
+                        {'nombre': 'Identificación Oficial', 'es_obligatorio': True, 'requiere_documento': True}
+                    ]
+                },
+                {
+                    'nombre': 'Reporte de Alumbrado Público',
+                    'dependencia': dependencias['servicios'],
+                    'tipo': TipoTramites.SOLICITUD_GENERAL,
+                    'descripcion': 'Reporte de fallas en luminarias o falta de iluminación en calles y parques.',
+                    'requisitos': [
+                        {'nombre': 'Evidencia Fotográfica', 'es_obligatorio': False, 'requiere_documento': True},
+                        {'nombre': 'Ubicación Exacta (Referencia)', 'es_obligatorio': True, 'requiere_documento': False}
+                    ]
+                }
             ]
 
-            for dep, nombre, tipo, desc in tramites_data:
-                tramite = TramiteCatalogo.objects.create(
-                    dependencia=dep,
-                    nombre=nombre,
-                    tipo=tipo,
-                    descripcion=desc
+            for tramite_info in tramites_data:
+                tramite, created = TramiteCatalogo.objects.get_or_create(
+                    nombre=tramite_info['nombre'],
+                    defaults={
+                        'dependencia': tramite_info['dependencia'],
+                        'tipo': tramite_info['tipo'],
+                        'descripcion': tramite_info['descripcion'],
+                        # 'empieza_activo': True # Removed as it doesn't exist in model
+                    }
                 )
-                # Requisito base para todos los trámites
-                Requisito.objects.create(
-                    tramite=tramite,
-                    nombre="Identificación Oficial (INE)",
-                    es_obligatorio=True,
-                    requiere_documento=True
-                )
+                
+                if created:
+                    self.stdout.write(self.style.SUCCESS(f'Trámite creado: {tramite.nombre}'))
+                    for req_info in tramite_info['requisitos']:
+                        Requisito.objects.create(
+                            tramite=tramite,
+                            nombre=req_info['nombre'],
+                            es_obligatorio=req_info['es_obligatorio'],
+                            requiere_documento=req_info['requiere_documento']
+                        )
+                else:
+                    # Optional: Update dependency if it was wrong before (e.g. from previous bad seed)
+                    if tramite.dependencia != tramite_info['dependencia']:
+                        tramite.dependencia = tramite_info['dependencia']
+                        tramite.save()
+                        self.stdout.write(self.style.WARNING(f'Trámite actualizado con dependencia correcta: {tramite.nombre}'))
+                    else:
+                        self.stdout.write(f'Trámite ya existente: {tramite.nombre}')
 
-            # 3. Crear Programas Sociales de Ejemplo
-            # Esto cubre parte de los "30 programas" definidos en la justificación [cite: 78]
-            programas_data = [
-                (def_vivienda, "Programa de Láminas de Zinc",
-                 "Apoyo para el mejoramiento de techumbres en viviendas vulnerables."),
-                (def_vivienda, "Construcción de Piso Firme", "Sustitución de pisos de tierra por concreto hidráulico."),
-                (def_educacion, "Becas Municipales de Excelencia",
-                 "Apoyo económico para estudiantes de alto desempeño académico."),
-                (def_vivienda, "Programa Pies de Casa",
-                 "Construcción de un cuarto dormitorio básico para familias en hacinamiento."),
-                (def_atencion, "Apoyo para Gastos Funerarios",
-                 "Asistencia económica para familias de escasos recursos."),
-            ]
-
-            # Creamos un trámite "contenedor" base para solicitudes de apoyo
-            tramite_apoyo_base = TramiteCatalogo.objects.create(
-                dependencia=def_atencion,
-                nombre="Solicitud de Apoyo Social",
-                tipo=TipoTramites.APOYO_SOCIAL,
-                descripcion="Trámite general para aplicar a cualquier programa social del ayuntamiento."
+            # 3. Crear Programa Social
+            dif_dep = dependencias['dif']
+            prog_lentes, created = ProgramaSocial.objects.get_or_create(
+                nombre='Programa de Lentes a Bajo Costo',
+                defaults={
+                    'dependencia': dif_dep,
+                    'descripcion': 'Apoyo para la adquisición de lentes graduados a bajo costo para personas de escasos recursos.',
+                    'categoria': 'Salud y Bienestar',
+                    'destacado': True,
+                    'esta_activo': True
+                }
             )
-
-            for dep, nombre, desc in programas_data:
-                prog = ProgramaSocial.objects.create(
-                    dependencia=dep,
-                    nombre=nombre,
-                    descripcion=desc,
-                    esta_activo=True
-                )
-
-                # Requisitos dinámicos (Opción B): vinculados al trámite base Y al programa específico
-                # Requisito común para todos los programas
+            
+            if created:
+                self.stdout.write(self.style.SUCCESS(f'Programa creado: {prog_lentes.nombre}'))
                 Requisito.objects.create(
-                    tramite=tramite_apoyo_base,
-                    programa=prog,
-                    nombre="CURP Actualizada",
+                    programa=prog_lentes,
+                    nombre='Identificación Oficial (INE)',
                     es_obligatorio=True,
                     requiere_documento=True
                 )
+                Requisito.objects.create(
+                    programa=prog_lentes,
+                    nombre='CURP',
+                    es_obligatorio=True,
+                    requiere_documento=True
+                )
+                Requisito.objects.create(
+                    programa=prog_lentes,
+                    nombre='Receta Médica (Opcional)',
+                    es_obligatorio=False,
+                    requiere_documento=True
+                )
+            else:
+                if prog_lentes.dependencia != dif_dep:
+                    prog_lentes.dependencia = dif_dep
+                    prog_lentes.save()
+                    self.stdout.write(self.style.WARNING(f'Programa actualizado con dependencia correcta: {prog_lentes.nombre}'))
+                else:
+                    self.stdout.write(f'Programa ya existente: {prog_lentes.nombre}')
 
-                # Requisito específico según el programa
-                if "Láminas" in nombre or "Pies de Casa" in nombre:
-                    Requisito.objects.create(
-                        tramite=tramite_apoyo_base,
-                        programa=prog,
-                        nombre="Fotografías de la Vivienda (Evidencia)",
-                        es_obligatorio=True,
-                        requiere_documento=True
-                    )
-
-                if "Becas" in nombre:
-                    Requisito.objects.create(
-                        tramite=tramite_apoyo_base,
-                        programa=prog,
-                        nombre="Constancia de Estudios Vigente",
-                        es_obligatorio=True,
-                        requiere_documento=True
-                    )
-
-        self.stdout.write(self.style.SUCCESS('Catálogo de trámites y programas sociales cargado exitosamente.'))
+        self.stdout.write(self.style.SUCCESS('Proceso de sembrado completado exitosamente con dependencias reales.'))
