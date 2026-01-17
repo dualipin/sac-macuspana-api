@@ -115,6 +115,9 @@ class SolicitudSerializer(serializers.ModelSerializer):
     estatus_display = serializers.CharField(
         source="get_estatus_display", read_only=True
     )
+    # Alias para mantener compatibilidad con frontend
+    fecha_creacion = serializers.DateTimeField(source="created_at", read_only=True)
+    fecha_actualizacion = serializers.DateTimeField(source="updated_at", read_only=True)
 
     class Meta:
         model = Solicitud
@@ -135,6 +138,8 @@ class SolicitudSerializer(serializers.ModelSerializer):
             "documentacion_completa",
             "created_at",
             "updated_at",
+            "fecha_creacion",
+            "fecha_actualizacion",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -147,7 +152,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
 
 class SolicitudCreateSerializer(serializers.ModelSerializer):
     """
-    Serializer para crear solicitudes
+    Serializer para crear solicitudes con documentos
     """
 
     class Meta:
@@ -166,17 +171,57 @@ class SolicitudCreateSerializer(serializers.ModelSerializer):
         tramite_tipo = data.get("tramite_tipo")
         programa_social = data.get("programa_social")
 
-        # Validar que solo se especifique trámite O programa
-        if programa_social and tramite_tipo:
-            # Si hay programa, verificar que el trámite sea coherente
-            # Esta validación depende de tu lógica de negocio
-            pass
+        # Validar que se especifique trámite O programa (al menos uno)
+        if not tramite_tipo and not programa_social:
+            raise serializers.ValidationError(
+                "Debe especificar un trámite o programa social"
+            )
 
         return data
 
     def create(self, validated_data):
-        # El estatus se establece automáticamente como PENDIENTE
-        return super().create(validated_data)
+        # Crear la solicitud (el estatus se establece automáticamente como PENDIENTE)
+        solicitud = super().create(validated_data)
+        
+        # Procesar documentos del request
+        request = self.context.get('request')
+        if request:
+            self._crear_documentos(solicitud, request)
+        
+        return solicitud
+    
+    def _crear_documentos(self, solicitud, request):
+        """
+        Procesa los archivos documentos_* y crea registros de DocumentoSolicitud
+        """
+        # Obtener requisitos que requieren documento
+        if solicitud.programa_social:
+            requisitos = solicitud.programa_social.requisitos_especificos.filter(
+                requiere_documento=True
+            )
+        else:
+            requisitos = solicitud.tramite_tipo.requisitos.filter(
+                requiere_documento=True
+            )
+        
+        # Procesar cada archivo documentos_*
+        for requisito in requisitos:
+            file_key = f'documentos_{requisito.id}'
+            archivo = request.FILES.get(file_key)
+            
+            if archivo:
+                try:
+                    DocumentoSolicitud.objects.create(
+                        solicitud=solicitud,
+                        requisito=requisito,
+                        archivo=archivo
+                    )
+                except Exception as e:
+                    # Log pero no fallar la creación de solicitud
+                    # El documento simplemente no se crea
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error al crear documento para requisito {requisito.id}: {str(e)}")
 
 
 class SolicitudListSerializer(serializers.ModelSerializer):
@@ -195,6 +240,9 @@ class SolicitudListSerializer(serializers.ModelSerializer):
     documentacion_completa = serializers.SerializerMethodField()
     nombre_dependencia = serializers.SerializerMethodField()
     folio = serializers.CharField(source="id", read_only=True)
+    # Alias para mantener compatibilidad con frontend
+    fecha_creacion = serializers.DateTimeField(source="created_at", read_only=True)
+    fecha_actualizacion = serializers.DateTimeField(source="updated_at", read_only=True)
 
     class Meta:
         model = Solicitud
@@ -204,10 +252,15 @@ class SolicitudListSerializer(serializers.ModelSerializer):
             "nombre_ciudadano",
             "nombre_tramite",
             "nombre_programa",
+            "programa_social",
             "estatus",
             "estatus_display",
+            "descripcion_ciudadano",
             "documentacion_completa",
             "created_at",
+            "updated_at",
+            "fecha_creacion",
+            "fecha_actualizacion",
             "nombre_dependencia",
         ]
 

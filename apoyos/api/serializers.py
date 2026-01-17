@@ -5,6 +5,9 @@ from servicios.api.serializers import RequisitoSerializer
 
 class ProgramaSocialSerializer(serializers.ModelSerializer):
     requisitos_especificos = RequisitoSerializer(many=True, read_only=True)
+    nombre_dependencia = serializers.CharField(
+        source="dependencia.nombre", read_only=True
+    )
 
     class Meta:
         model = ProgramaSocial
@@ -18,6 +21,7 @@ class ProgramaSocialSerializer(serializers.ModelSerializer):
             "imagen",
             "destacado",
             "categoria",
+            "nombre_dependencia",
         ]
         read_only_fields = ["id"]
 
