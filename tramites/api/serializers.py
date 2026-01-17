@@ -4,6 +4,19 @@ from core.choices import EstatusSolicitud, Roles
 from ciudadanos.api.serializers import CiudadanoSerializer
 
 
+class CiudadanoSimpleSerializer(serializers.Serializer):
+    """Serializer simple para ciudadano (anidado)"""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
+    apellido_paterno = serializers.CharField()
+    apellido_materno = serializers.CharField()
+    nombre_completo = serializers.SerializerMethodField()
+
+    def get_nombre_completo(self, obj):
+        return f"{obj.nombre} {obj.apellido_paterno} {obj.apellido_materno}".strip()
+
+
 class RequisitoSimpleSerializer(serializers.Serializer):
     """Serializer simple para requisito (anidado)"""
 
@@ -271,7 +284,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
     Serializer ligero para listados
     """
 
-    ciudadano = CiudadanoSerializer(read_only=True)
+    ciudadano = CiudadanoSimpleSerializer(read_only=True)
     programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     nombre_ciudadano = serializers.SerializerMethodField()
     nombre_tramite = serializers.CharField(source="tramite_tipo.nombre", read_only=True)
