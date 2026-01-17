@@ -115,6 +115,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
     estatus_display = serializers.CharField(
         source="get_estatus_display", read_only=True
     )
+    nombre_dependencia = serializers.SerializerMethodField()
     # Alias para mantener compatibilidad con frontend
     fecha_creacion = serializers.DateTimeField(source="created_at", read_only=True)
     fecha_actualizacion = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -129,6 +130,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
             "nombre_tramite",
             "programa_social",
             "nombre_programa",
+            "nombre_dependencia",
             "estatus",
             "estatus_display",
             "descripcion_ciudadano",
@@ -148,6 +150,15 @@ class SolicitudSerializer(serializers.ModelSerializer):
 
     def get_documentacion_completa(self, obj):
         return obj.verificar_documentacion_completa()
+
+    def get_nombre_dependencia(self, obj):
+        """Nombre de la dependencia a la que está dirigida la solicitud"""
+        # Priorizar programa social si existe, luego trámite
+        if obj.programa_social:
+            return obj.programa_social.dependencia.nombre
+        if obj.tramite_tipo:
+            return obj.tramite_tipo.dependencia.nombre
+        return "N/A"
 
 
 class SolicitudCreateSerializer(serializers.ModelSerializer):
@@ -272,10 +283,11 @@ class SolicitudListSerializer(serializers.ModelSerializer):
         return obj.verificar_documentacion_completa()
 
     def get_nombre_dependencia(self, obj):
-        if obj.tramite_tipo:
-            return obj.tramite_tipo.dependencia.nombre
+        # Priorizar programa social si existe, luego trámite
         if obj.programa_social:
             return obj.programa_social.dependencia.nombre
+        if obj.tramite_tipo:
+            return obj.tramite_tipo.dependencia.nombre
         return "N/A"
 
 
