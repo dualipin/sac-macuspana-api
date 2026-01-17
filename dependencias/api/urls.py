@@ -4,7 +4,7 @@ from .views import DependenciaViewSet, FuncionarioViewSet
 
 router = routers.DefaultRouter()
 router.register(r'funcionarios', FuncionarioViewSet)
-router.register(r'', DependenciaViewSet)
+router.register(r'dependencias', DependenciaViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),

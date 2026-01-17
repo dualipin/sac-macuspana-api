@@ -52,3 +52,42 @@ class ProgramaSocialViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(esta_activo=True)
 
         return queryset
+
+    def perform_create(self, serializer):
+        """
+        Validar que el funcionario solo cree programas para su dependencia
+        """
+        user = self.request.user
+        
+        # Si es funcionario, forzar su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            serializer.save(dependencia=user.funcionario.dependencia)
+        else:
+            # Administradores pueden guardar tal cual viene (con la dependencia elegida)
+            serializer.save()
+
+    def perform_update(self, serializer):
+        """
+        Validar que el funcionario solo edite programas de su dependencia
+        """
+        user = self.request.user
+        instance = self.get_object()
+
+        # Si es funcionario, verificar que el programa pertenezca a su dependencia
+        if user.rol == "FUNCIONARIO":
+            if not hasattr(user, 'funcionario'):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+            
+            if instance.dependencia != user.funcionario.dependencia:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("No tienes permiso para editar programas de otra dependencia.")
+            
+            # Al guardar, asegurarnos de que no cambie la dependencia
+            serializer.save(dependencia=user.funcionario.dependencia)
+        else:
+            serializer.save()
