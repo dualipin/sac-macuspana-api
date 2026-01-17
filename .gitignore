@@ -1,0 +1,46 @@
+# ides for Python projects
+.idea/
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+*.env.*
+*.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Django
+*.log
+*.pot
+*.pyc
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+static/
+local_settings.py
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Git
+.git/
+
+# Pipenv
+Pipfile.lock
+
+# Migrations
+*/migrations/*.py
+!*/migrations/__init__.py

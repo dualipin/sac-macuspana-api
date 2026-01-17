@@ -1,0 +1,49 @@
+<!-- templates/bienvenida_email.html -->
+<!DOCTYPE html>
+<html lang="es">
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+    <tr>
+        <td align="center" style="padding: 20px 0;">
+            <table width="600" border="0" cellspacing="0" cellpadding="0"
+                   style="background-color: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #dddddd;">
+                <!-- Encabezado -->
+                <tr>
+                    <td align="center" style="background-color: #671034; padding: 40px 0;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">H. Ayuntamiento de Macuspana</h1>
+                        <p style="color: #f0f0f0; margin: 5px 0 0 0;">Coordinación de Registro Ciudadano</p>
+                    </td>
+                </tr>
+                <!-- Cuerpo -->
+                <tr>
+                    <td style="padding: 40px 30px;">
+                        <h2 style="color: #333333; margin-top: 0;">¡Bienvenido(a), {{ nombre }}!</h2>
+                        <p style="color: #666666; line-height: 1.6;">Nos complace informarte que tu registro en el
+                            sistema ciudadano se ha completado con éxito.</p>
+                        <p style="color: #666666; line-height: 1.6;">A partir de ahora podrás acceder a los servicios
+                            digitales del municipio utilizando tu CURP: <strong>{{ curp }}</strong>.</p>
+
+                        <table border="0" cellspacing="0" cellpadding="0" style="margin-top: 30px;">
+                            <tr>
+                                <td align="center" style="border-radius: 4px;" bgcolor="#671034">
+                                    <a href="{{ web }}" target="_blank"
+                                       style="padding: 12px 25px; color: #ffffff; text-decoration: none; font-weight: bold; display: inline-block;">Acceder
+                                        al Portal</a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!-- Pie de página -->
+                <tr>
+                    <td align="center"
+                        style="padding: 20px; background-color: #f9f9f9; color: #999999; font-size: 12px;">
+                        &copy; 2026 H. Ayuntamiento de Macuspana. Todos los derechos reservados.
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>
