@@ -47,7 +47,16 @@ class TramiteCatalogoViewSet(viewsets.ModelViewSet):
 
         # Si es funcionario, solo mostrar trámites de su dependencia
         if hasattr(user, "rol") and user.rol == "FUNCIONARIO":
-            if hasattr(user, 'funcionario') and user.funcionario:
+            # Asegurar que se carga la relación funcionario
+            if (
+                not hasattr(user, "_prefetched_objects_cache")
+                or "funcionario" not in user.__dict__
+            ):
+                user = self.request.user.__class__.objects.select_related(
+                    "funcionario"
+                ).get(pk=user.pk)
+
+            if hasattr(user, "funcionario") and user.funcionario:
                 queryset = queryset.filter(dependencia=user.funcionario.dependencia)
             else:
                 # Si no tiene perfil de funcionario asociado, no mostrar nada
@@ -60,13 +69,16 @@ class TramiteCatalogoViewSet(viewsets.ModelViewSet):
         Validar que el funcionario solo cree trámites para su dependencia
         """
         user = self.request.user
-        
+
         # Si es funcionario, forzar su dependencia
         if user.rol == "FUNCIONARIO":
-            if not hasattr(user, 'funcionario'):
+            if not hasattr(user, "funcionario"):
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
-            
+
+                raise PermissionDenied(
+                    "El usuario no tiene un perfil de funcionario asociado."
+                )
+
             serializer.save(dependencia=user.funcionario.dependencia)
         else:
             # Administradores pueden guardar tal cual viene (con la dependencia elegida)
@@ -81,14 +93,20 @@ class TramiteCatalogoViewSet(viewsets.ModelViewSet):
 
         # Si es funcionario, verificar que el trámite pertenezca a su dependencia
         if user.rol == "FUNCIONARIO":
-            if not hasattr(user, 'funcionario'):
+            if not hasattr(user, "funcionario"):
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
-            
+
+                raise PermissionDenied(
+                    "El usuario no tiene un perfil de funcionario asociado."
+                )
+
             if instance.dependencia != user.funcionario.dependencia:
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("No tienes permiso para editar trámites de otra dependencia.")
-            
+
+                raise PermissionDenied(
+                    "No tienes permiso para editar trámites de otra dependencia."
+                )
+
             # Al guardar, asegurarnos de que no cambie la dependencia
             serializer.save(dependencia=user.funcionario.dependencia)
         else:
@@ -102,14 +120,20 @@ class TramiteCatalogoViewSet(viewsets.ModelViewSet):
 
         # Si es funcionario, verificar que el trámite pertenezca a su dependencia
         if user.rol == "FUNCIONARIO":
-            if not hasattr(user, 'funcionario'):
+            if not hasattr(user, "funcionario"):
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
-            
+
+                raise PermissionDenied(
+                    "El usuario no tiene un perfil de funcionario asociado."
+                )
+
             if instance.dependencia != user.funcionario.dependencia:
                 from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("No tienes permiso para eliminar trámites de otra dependencia.")
-        
+
+                raise PermissionDenied(
+                    "No tienes permiso para eliminar trámites de otra dependencia."
+                )
+
         instance.delete()
 
 
@@ -139,24 +163,29 @@ class RequisitoViewSet(viewsets.ModelViewSet):
         if user.rol != "FUNCIONARIO":
             return
 
-        if not hasattr(user, 'funcionario'):
+        if not hasattr(user, "funcionario"):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("El usuario no tiene un perfil de funcionario asociado.")
+
+            raise PermissionDenied(
+                "El usuario no tiene un perfil de funcionario asociado."
+            )
 
         dependencia_usuario = user.funcionario.dependencia
 
         if tramite and tramite.dependencia != dependencia_usuario:
-             from rest_framework.exceptions import PermissionDenied
-             raise PermissionDenied("No tienes permiso sobre este trámite.")
-        
+            from rest_framework.exceptions import PermissionDenied
+
+            raise PermissionDenied("No tienes permiso sobre este trámite.")
+
         if programa and programa.dependencia != dependencia_usuario:
             from rest_framework.exceptions import PermissionDenied
+
             raise PermissionDenied("No tienes permiso sobre este programa social.")
 
     def perform_create(self, serializer):
-        tramite = serializer.validated_data.get('tramite')
-        programa = serializer.validated_data.get('programa')
-        
+        tramite = serializer.validated_data.get("tramite")
+        programa = serializer.validated_data.get("programa")
+
         self._validar_propiedad_dependencia(tramite, programa)
         serializer.save()
 
@@ -164,11 +193,11 @@ class RequisitoViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         # Verificar el objeto actual
         self._validar_propiedad_dependencia(instance.tramite, instance.programa)
-        
+
         # Verificar si intenta cambiarlo a otro padre que no le pertenece
-        nuevo_tramite = serializer.validated_data.get('tramite', instance.tramite)
-        nuevo_programa = serializer.validated_data.get('programa', instance.programa)
-        
+        nuevo_tramite = serializer.validated_data.get("tramite", instance.tramite)
+        nuevo_programa = serializer.validated_data.get("programa", instance.programa)
+
         self._validar_propiedad_dependencia(nuevo_tramite, nuevo_programa)
         serializer.save()
 

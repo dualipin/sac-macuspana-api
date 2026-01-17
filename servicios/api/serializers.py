@@ -58,7 +58,9 @@ class RequisitoCreateSerializer(serializers.ModelSerializer):
 
 class TramiteCatalogoSerializer(serializers.ModelSerializer):
     requisitos = RequisitoSerializer(many=True, read_only=True)
-    nombre_dependencia = serializers.CharField(source='dependencia.nombre', read_only=True, allow_null=True)
+    nombre_dependencia = serializers.CharField(
+        source="dependencia.nombre", read_only=True, allow_null=True
+    )
     cantidad_requisitos = serializers.SerializerMethodField()
 
     class Meta:
@@ -76,9 +78,7 @@ class TramiteCatalogoSerializer(serializers.ModelSerializer):
             "destacado",
         ]
         # Hacer dependencia opcional para que funcionarios no tengan que enviarla
-        extra_kwargs = {
-            'dependencia': {'required': False, 'allow_null': True}
-        }
+        extra_kwargs = {"dependencia": {"required": False, "allow_null": True}}
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -88,7 +88,8 @@ class TramiteCatalogoSerializer(serializers.ModelSerializer):
             else None
         )
 
-        representation["tipo"] = instance.get_tipo_display()
+        # Mantener el valor crudo para edición, agregar display por separado
+        representation["tipo_display"] = instance.get_tipo_display()
 
         representation["dependencia"] = (
             {
@@ -100,7 +101,7 @@ class TramiteCatalogoSerializer(serializers.ModelSerializer):
         )
 
         return representation
-    
+
     def get_cantidad_requisitos(self, obj):
         return obj.requisitos.count()
 
