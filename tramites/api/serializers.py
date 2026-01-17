@@ -182,14 +182,14 @@ class SolicitudCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         # Crear la solicitud (el estatus se establece automáticamente como PENDIENTE)
         solicitud = super().create(validated_data)
-        
+
         # Procesar documentos del request
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request:
             self._crear_documentos(solicitud, request)
-        
+
         return solicitud
-    
+
     def _crear_documentos(self, solicitud, request):
         """
         Procesa los archivos documentos_* y crea registros de DocumentoSolicitud
@@ -203,25 +203,26 @@ class SolicitudCreateSerializer(serializers.ModelSerializer):
             requisitos = solicitud.tramite_tipo.requisitos.filter(
                 requiere_documento=True
             )
-        
+
         # Procesar cada archivo documentos_*
         for requisito in requisitos:
-            file_key = f'documentos_{requisito.id}'
+            file_key = f"documentos_{requisito.id}"
             archivo = request.FILES.get(file_key)
-            
+
             if archivo:
                 try:
                     DocumentoSolicitud.objects.create(
-                        solicitud=solicitud,
-                        requisito=requisito,
-                        archivo=archivo
+                        solicitud=solicitud, requisito=requisito, archivo=archivo
                     )
                 except Exception as e:
                     # Log pero no fallar la creación de solicitud
                     # El documento simplemente no se crea
                     import logging
+
                     logger = logging.getLogger(__name__)
-                    logger.error(f"Error al crear documento para requisito {requisito.id}: {str(e)}")
+                    logger.error(
+                        f"Error al crear documento para requisito {requisito.id}: {str(e)}"
+                    )
 
 
 class SolicitudListSerializer(serializers.ModelSerializer):
@@ -276,6 +277,30 @@ class SolicitudListSerializer(serializers.ModelSerializer):
         if obj.programa_social:
             return obj.programa_social.dependencia.nombre
         return "N/A"
+
+
+class SolicitudHistorialSerializer(serializers.Serializer):
+    """
+    Serializer para el historial de cambios de una solicitud
+    """
+
+    id = serializers.IntegerField()
+    estatus = serializers.CharField()
+    estatus_display = serializers.CharField()
+    fecha = serializers.DateTimeField(source="history_date")
+    cambio_por = serializers.SerializerMethodField()
+    cambio_tipo = serializers.CharField(source="get_history_type_display")
+
+    def get_cambio_por(self, obj):
+        """Obtener nombre del usuario que hizo el cambio"""
+        if obj.history_user:
+            usuario = obj.history_user
+            if hasattr(usuario, "ciudadano"):
+                return (
+                    f"{usuario.ciudadano.nombre} {usuario.ciudadano.apellido_paterno}"
+                )
+            return usuario.username
+        return "Sistema"
 
 
 class CambiarEstatusSolicitudSerializer(serializers.Serializer):
