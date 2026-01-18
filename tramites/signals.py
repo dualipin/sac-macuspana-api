@@ -1,27 +1,31 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
-from tramites.models import Solicitud
-from notificaciones.models import Notificacion
+from tramites.models import Solicitud, DocumentoSolicitud, SolicitudAsignacion
+from notificaciones.services import NotificationManager
 from core.choices import EstatusSolicitud
+
+
+# Instancia global del gestor de notificaciones
+notification_manager = NotificationManager()
 
 
 @receiver(post_save, sender=Solicitud)
 def notificar_cambio_estatus_solicitud(sender, instance, created, **kwargs):
     """
-    Envía notificación al ciudadano cuando cambia el estatus de su solicitud
+    Envía notificación al ciudadano cuando cambia el estatus de su solicitud.
+    Utiliza NotificationManager para despacho condicional según rol.
     """
     if created:
-        # Notificación de nueva solicitud creada
-        Notificacion.objects.create(
-            usuario=instance.ciudadano.usuario,
-            titulo="Solicitud Recibida",
-            mensaje=f"Su solicitud para '{instance.tramite_tipo.nombre}' ha sido recibida y está en proceso de revisión.",
+        # Notificación al ciudadano de nueva solicitud creada
+        notification_manager.notificar_cambio_estado_solicitud(
+            solicitud=instance, nuevo_estado=instance.estatus, comentario=None
         )
-    else:
-        # Verificar si cambió el estatus
-        # Para detectar cambios, necesitamos comparar con la versión anterior
-        # Usaremos HistoricalRecords que ya está configurado
 
+        # Notificar a funcionarios de la dependencia
+        notification_manager.notificar_nueva_solicitud_dependencia(instance)
+
+    else:
+        # Verificar si cambió el estatus usando HistoricalRecords
         if hasattr(instance, "history"):
             history = instance.history.all()
             if history.count() > 1:
@@ -29,54 +33,56 @@ def notificar_cambio_estatus_solicitud(sender, instance, created, **kwargs):
                 version_anterior = history[1]
 
                 if ultima_version.estatus != version_anterior.estatus:
-                    # El estatus cambió, enviar notificación
-                    mensajes = {
-                        EstatusSolicitud.EN_REVISION: f"Su solicitud está en revisión por parte de nuestro equipo.",
-                        EstatusSolicitud.REQUIERE_INFORMACION: f"Su solicitud requiere información adicional. Por favor revise los comentarios.",
-                        EstatusSolicitud.APROBADO: f"¡Felicidades! Su solicitud ha sido aprobada.",
-                        EstatusSolicitud.ACEPTADO: f"Su solicitud ha sido aceptada y está siendo procesada.",
-                        EstatusSolicitud.RECHAZADO: f"Lamentablemente su solicitud ha sido rechazada. Revise los comentarios para más detalles.",
-                    }
-
-                    mensaje_base = mensajes.get(
-                        instance.estatus,
-                        f"El estatus de su solicitud ha cambiado a: {instance.get_estatus_display()}",
+                    # El estatus cambió, enviar notificación al ciudadano
+                    notification_manager.notificar_cambio_estado_solicitud(
+                        solicitud=instance,
+                        nuevo_estado=instance.estatus,
+                        comentario=instance.comentarios_revision,
                     )
-
-                    if instance.comentarios_revision:
-                        mensaje_completo = f"{mensaje_base}\n\nComentarios: {instance.comentarios_revision}"
-                    else:
-                        mensaje_completo = mensaje_base
-
-                    Notificacion.objects.create(
-                        usuario=instance.ciudadano.usuario,
-                        titulo=f"Actualización de Solicitud - {instance.get_estatus_display()}",
-                        mensaje=mensaje_completo,
-                    )
-
-
-# Opcional: Notificación cuando se sube un documento
-from tramites.models import DocumentoSolicitud
 
 
 @receiver(post_save, sender=DocumentoSolicitud)
 def notificar_documento_subido(sender, instance, created, **kwargs):
     """
-    Notifica cuando se sube un nuevo documento a una solicitud
+    Notifica cuando se sube un nuevo documento a una solicitud.
     """
     if created:
         # Notificar al ciudadano
-        Notificacion.objects.create(
+        notification_manager.crear_notificacion(
             usuario=instance.solicitud.ciudadano.usuario,
-            titulo="Documento Agregado",
+            tipo="DOCUMENTO_RECIBIDO",
+            titulo="Documento Recibido",
             mensaje=f"Se ha agregado el documento para el requisito '{instance.requisito.nombre}' a su solicitud.",
+            solicitud=instance.solicitud,
+            metadata={
+                "requisito": instance.requisito.nombre,
+                "folio": f"SOL-{instance.solicitud.id:06d}",
+            },
         )
 
-        # También podríamos notificar a los funcionarios asignados
+        # Notificar a los funcionarios asignados (solo bandeja interna)
         asignaciones_activas = instance.solicitud.asignaciones.filter(activo=True)
         for asignacion in asignaciones_activas:
-            Notificacion.objects.create(
+            notification_manager.crear_notificacion(
                 usuario=asignacion.funcionario,
+                tipo="DOCUMENTO_RECIBIDO",
                 titulo="Nuevo Documento en Solicitud",
-                mensaje=f"Se ha agregado un nuevo documento a la solicitud de {instance.solicitud.ciudadano.nombre}.",
+                mensaje=f"Se ha agregado un nuevo documento a la solicitud {instance.solicitud.ciudadano.nombre_completo}.",
+                solicitud=instance.solicitud,
+                metadata={
+                    "requisito": instance.requisito.nombre,
+                    "folio": f"SOL-{instance.solicitud.id:06d}",
+                },
             )
+
+
+@receiver(post_save, sender=SolicitudAsignacion)
+def notificar_asignacion_funcionario(sender, instance, created, **kwargs):
+    """
+    Notifica al funcionario cuando se le asigna una solicitud.
+    Solo bandeja interna (no email).
+    """
+    if created and instance.activo:
+        notification_manager.notificar_asignacion_funcionario(
+            funcionario=instance.funcionario, solicitud=instance.solicitud
+        )

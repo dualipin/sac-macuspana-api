@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ asunto }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background-color: #8B4513;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .content {
+            background-color: #f9f9f9;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .footer {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .metadata {
+            background-color: #e9e9e9;
+            padding: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #8B4513;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>H. Ayuntamiento de Macuspana</h1>
+        <p>Sistema de Atención Ciudadana</p>
+    </div>
+
+    <div class="content">
+        <h2>{{ asunto }}</h2>
+        <p>{{ mensaje }}</p>
+
+        {% if metadata %}
+        <div class="metadata">
+            {% if metadata.folio %}
+            <p><strong>Folio:</strong> {{ metadata.folio }}</p>
+            {% endif %}
+
+            {% if metadata.tramite %}
+            <p><strong>Trámite:</strong> {{ metadata.tramite }}</p>
+            {% endif %}
+
+            {% if metadata.comentario %}
+            <p><strong>Comentario:</strong> {{ metadata.comentario }}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="footer">
+        <p>Este es un correo automático, por favor no responder.</p>
+        <p>&copy; 2026 H. Ayuntamiento de Macuspana</p>
+    </div>
+</body>
+
+</html>
