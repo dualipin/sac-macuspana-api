@@ -43,6 +43,22 @@ class ProgramaSocialSimpleSerializer(serializers.Serializer):
     requisitos_especificos = RequisitoSimpleSerializer(many=True, read_only=True)
 
 
+class TramiteSimpleSerializer(serializers.Serializer):
+    """Serializer simple para trámite (anidado)"""
+
+    id = serializers.IntegerField()
+    nombre = serializers.CharField()
+    descripcion = serializers.CharField()
+    imagen = serializers.SerializerMethodField()
+    dependencia = DependenciaSimpleSerializer(read_only=True)
+
+    def get_imagen(self, obj):
+        request = self.context.get("request")
+        if obj.imagen and request:
+            return request.build_absolute_uri(obj.imagen.url)
+        return obj.imagen.url if obj.imagen else None
+
+
 class DocumentoSolicitudSerializer(serializers.ModelSerializer):
     """
     Serializer para documentos de solicitudes
@@ -146,6 +162,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
     """
 
     ciudadano = CiudadanoSerializer(read_only=True)
+    tramite_tipo = TramiteSimpleSerializer(read_only=True)
     programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     documentos = DocumentoSolicitudSerializer(many=True, read_only=True)
     asignaciones = SolicitudAsignacionSerializer(many=True, read_only=True)
@@ -285,6 +302,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
     """
 
     ciudadano = CiudadanoSimpleSerializer(read_only=True)
+    tramite_tipo = TramiteSimpleSerializer(read_only=True)
     programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     nombre_ciudadano = serializers.SerializerMethodField()
     nombre_tramite = serializers.CharField(source="tramite_tipo.nombre", read_only=True)
@@ -307,6 +325,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
             "id",
             "folio",
             "ciudadano",
+            "tramite_tipo",
             "nombre_ciudadano",
             "nombre_tramite",
             "nombre_programa",

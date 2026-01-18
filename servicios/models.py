@@ -18,6 +18,9 @@ class TramiteCatalogo(SoftDeleteModel):
     destacado = models.BooleanField(
         default=False, help_text="Si se debe mostrar en la sección de destacados"
     )
+    esta_activo = models.BooleanField(
+        default=True, help_text="Indica si el trámite está disponible para solicitar"
+    )
 
     history = HistoricalRecords()
 

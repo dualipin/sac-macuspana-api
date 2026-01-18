@@ -76,6 +76,7 @@ class TramiteCatalogoSerializer(serializers.ModelSerializer):
             "requisitos",
             "cantidad_requisitos",
             "destacado",
+            "esta_activo",
         ]
         # Hacer dependencia opcional para que funcionarios no tengan que enviarla
         extra_kwargs = {"dependencia": {"required": False, "allow_null": True}}
