@@ -7,7 +7,13 @@ from rest_framework.permissions import IsAuthenticated
 from django.http import FileResponse
 import os
 
-from tramites.models import Solicitud, DocumentoSolicitud, SolicitudAsignacion
+from tramites.models import (
+    Solicitud,
+    DocumentoSolicitud,
+    SolicitudAsignacion,
+    SolicitudReasignacion,
+)
+from dependencias.models import Dependencia
 from core.permissions import (
     IsOwnerOrStaff,
     IsAdministradorOrFuncionario,
@@ -16,7 +22,7 @@ from core.permissions import (
 )
 from core.choices import Roles, EstatusSolicitud
 from rest_framework.views import APIView
-from django.db.models import Count, Q
+from django.db.models import Count
 
 from .serializers import (
     SolicitudSerializer,
@@ -25,7 +31,9 @@ from .serializers import (
     DocumentoSolicitudSerializer,
     DocumentoSolicitudCreateSerializer,
     SolicitudAsignacionSerializer,
+    SolicitudReasignacionSerializer,
     CambiarEstatusSolicitudSerializer,
+    ReasignarSolicitudSerializer,
 )
 
 
@@ -46,7 +54,13 @@ class SolicitudViewSet(viewsets.ModelViewSet):
         filters.SearchFilter,
         filters.OrderingFilter,
     ]
-    filterset_fields = ["estatus", "tramite_tipo", "programa_social", "ciudadano"]
+    filterset_fields = [
+        "estatus",
+        "tramite_tipo",
+        "programa_social",
+        "ciudadano",
+        "dependencia_asignada",
+    ]
     search_fields = [
         "descripcion_ciudadano",
         "ciudadano__nombre",
@@ -83,14 +97,19 @@ class SolicitudViewSet(viewsets.ModelViewSet):
             # Ciudadanos solo ven sus propias solicitudes
             return queryset.filter(ciudadano__usuario=user)
         elif user.rol == Roles.FUNCIONARIO:
-            # Funcionarios ven:
-            # 1. Solicitudes de su dependencia (por trámite o programa)
-            # 2. Solicitudes asignadas explícitamente a ellos
+            # Funcionarios ven solicitudes de su dependencia actual o asignaciones activas
             if hasattr(user, "funcionario"):
                 dependencia = user.funcionario.dependencia
                 return queryset.filter(
-                    Q(tramite_tipo__dependencia=dependencia)
-                    | Q(programa_social__dependencia=dependencia)
+                    Q(dependencia_asignada=dependencia)
+                    | Q(
+                        dependencia_asignada__isnull=True,
+                        tramite_tipo__dependencia=dependencia,
+                    )
+                    | Q(
+                        dependencia_asignada__isnull=True,
+                        programa_social__dependencia=dependencia,
+                    )
                     | Q(asignaciones__funcionario=user, asignaciones__activo=True)
                 ).distinct()
 
@@ -263,6 +282,74 @@ class SolicitudViewSet(viewsets.ModelViewSet):
             )
 
         return Response(eventos, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[IsAuthenticated, IsAdministradorOrFuncionario],
+        url_path="reasignar",
+    )
+    def reasignar_dependencia(self, request, pk=None):
+        """
+        Permite delegar la solicitud a otra dependencia y deja historial.
+        POST /api/tramites/solicitudes/{id}/reasignar/
+        Body: {"dependencia_id": 5, "motivo": "...", "notas": "..."}
+        """
+
+        solicitud = self.get_object()
+        serializer = ReasignarSolicitudSerializer(
+            data=request.data, context={"solicitud": solicitud}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        dependencia_destino = Dependencia.objects.get(
+            pk=serializer.validated_data["dependencia_id"]
+        )
+        dependencia_origen = solicitud.dependencia_actual()
+
+        # Validar permisos: funcionarios solo pueden reasignar lo que pertenece a su dependencia
+        user = request.user
+        if user.rol == Roles.FUNCIONARIO:
+            if not hasattr(user, "funcionario"):
+                return Response(
+                    {"detail": "No tienes permisos para reasignar esta solicitud"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if (
+                dependencia_origen
+                and dependencia_origen != user.funcionario.dependencia
+            ):
+                return Response(
+                    {"detail": "Solo puedes reasignar solicitudes de tu dependencia"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # Desactivar asignaciones previas de la dependencia de origen
+        solicitud.asignaciones.filter(activo=True).update(activo=False)
+
+        # Guardar nuevo responsable
+        solicitud.dependencia_asignada = dependencia_destino
+        solicitud.save(update_fields=["dependencia_asignada", "updated_at"])
+
+        reasignacion = SolicitudReasignacion.objects.create(
+            solicitud=solicitud,
+            dependencia_origen=dependencia_origen or dependencia_destino,
+            dependencia_destino=dependencia_destino,
+            reasignado_por=request.user,
+            motivo=serializer.validated_data.get("motivo", ""),
+            notas=serializer.validated_data.get("notas", ""),
+        )
+
+        response = {
+            "solicitud": SolicitudSerializer(
+                solicitud, context={"request": request}
+            ).data,
+            "reasignacion": SolicitudReasignacionSerializer(
+                reasignacion, context={"request": request}
+            ).data,
+        }
+
+        return Response(response, status=status.HTTP_200_OK)
 
     def _get_usuario_nombre(self, usuario):
         """Helper para obtener el nombre del usuario"""
@@ -498,8 +585,15 @@ class DashboardView(APIView):
         elif user.rol == Roles.FUNCIONARIO and hasattr(user, "funcionario"):
             dependencia = user.funcionario.dependencia
             base_qs = base_qs.filter(
-                Q(tramite_tipo__dependencia=dependencia)
-                | Q(programa_social__dependencia=dependencia)
+                Q(dependencia_asignada=dependencia)
+                | Q(
+                    dependencia_asignada__isnull=True,
+                    tramite_tipo__dependencia=dependencia,
+                )
+                | Q(
+                    dependencia_asignada__isnull=True,
+                    programa_social__dependencia=dependencia,
+                )
                 | Q(asignaciones__funcionario=user, asignaciones__activo=True)
             ).distinct()
             data["mensaje_bienvenida"] = (
@@ -687,8 +781,15 @@ class AdminDashboardViewSet(viewsets.ViewSet):
         dept_filter = request.query_params.get("department")
         if dept_filter and dept_filter != "undefined":
             qs = qs.filter(
-                Q(tramite_tipo__dependencia_id=dept_filter)
-                | Q(programa_social__dependencia_id=dept_filter)
+                Q(dependencia_asignada_id=dept_filter)
+                | Q(
+                    dependencia_asignada__isnull=True,
+                    tramite_tipo__dependencia_id=dept_filter,
+                )
+                | Q(
+                    dependencia_asignada__isnull=True,
+                    programa_social__dependencia_id=dept_filter,
+                )
             )
 
         paginator = SolicitudViewSet().paginator  # Reuse paginator?

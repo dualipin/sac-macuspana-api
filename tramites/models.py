@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django_softdelete.models import SoftDeleteModel
 from simple_history.models import HistoricalRecords
@@ -30,6 +31,14 @@ class Solicitud(SoftDeleteModel):
     comentarios_revision = models.TextField(
         blank=True, help_text="Comentarios del funcionario durante la revisión"
     )
+    dependencia_asignada = models.ForeignKey(
+        "dependencias.Dependencia",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="solicitudes_recibidas",
+        help_text="Dependencia responsable actual de la solicitud",
+    )
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     updated_at = models.DateTimeField(auto_now=True, null=True)
 
@@ -55,6 +64,16 @@ class Solicitud(SoftDeleteModel):
         documentos_ids = set(self.documentos.values_list("requisito_id", flat=True))
 
         return requisitos_ids == documentos_ids
+
+    def dependencia_actual(self):
+        """Obtiene la dependencia que debe atender la solicitud"""
+        if self.dependencia_asignada:
+            return self.dependencia_asignada
+        if self.programa_social:
+            return self.programa_social.dependencia
+        if self.tramite_tipo:
+            return self.tramite_tipo.dependencia
+        return None
 
 
 class DocumentoSolicitud(models.Model):
@@ -112,4 +131,43 @@ class SolicitudAsignacion(models.Model):
         indexes = [
             models.Index(fields=["solicitud", "activo"]),
             models.Index(fields=["funcionario", "activo"]),
+        ]
+
+
+class SolicitudReasignacion(models.Model):
+    """Historial de reasignaciones/delegaciones de una solicitud entre dependencias"""
+
+    solicitud = models.ForeignKey(
+        Solicitud,
+        on_delete=models.CASCADE,
+        related_name="reasignaciones",
+    )
+    dependencia_origen = models.ForeignKey(
+        "dependencias.Dependencia",
+        on_delete=models.PROTECT,
+        related_name="reasignaciones_salientes",
+    )
+    dependencia_destino = models.ForeignKey(
+        "dependencias.Dependencia",
+        on_delete=models.PROTECT,
+        related_name="reasignaciones_entrantes",
+    )
+    reasignado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reasignaciones_realizadas",
+    )
+    motivo = models.CharField(max_length=255, blank=True)
+    notas = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["solicitud", "created_at"],
+                name="tramite_reasig_created_idx",
+            )
         ]

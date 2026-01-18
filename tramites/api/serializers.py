@@ -1,5 +1,10 @@
 from rest_framework import serializers
-from tramites.models import Solicitud, DocumentoSolicitud, SolicitudAsignacion
+from tramites.models import (
+    Solicitud,
+    DocumentoSolicitud,
+    SolicitudAsignacion,
+    SolicitudReasignacion,
+)
 from core.choices import EstatusSolicitud, Roles
 from ciudadanos.api.serializers import CiudadanoSerializer
 
@@ -163,6 +168,36 @@ class SolicitudAsignacionSerializer(serializers.ModelSerializer):
         return obj.asignado_por.username if obj.asignado_por else "Sistema (automático)"
 
 
+class SolicitudReasignacionSerializer(serializers.ModelSerializer):
+    dependencia_origen_nombre = serializers.CharField(
+        source="dependencia_origen.nombre", read_only=True
+    )
+    dependencia_destino_nombre = serializers.CharField(
+        source="dependencia_destino.nombre", read_only=True
+    )
+    reasignado_por_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SolicitudReasignacion
+        fields = [
+            "id",
+            "solicitud",
+            "dependencia_origen",
+            "dependencia_origen_nombre",
+            "dependencia_destino",
+            "dependencia_destino_nombre",
+            "reasignado_por",
+            "reasignado_por_nombre",
+            "motivo",
+            "notas",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at", "reasignado_por"]
+
+    def get_reasignado_por_nombre(self, obj):
+        return obj.reasignado_por.username if obj.reasignado_por else "Sistema"
+
+
 class SolicitudSerializer(serializers.ModelSerializer):
     """
     Serializer completo para solicitudes con documentos y asignaciones
@@ -173,6 +208,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
     programa_social = ProgramaSocialSimpleSerializer(read_only=True)
     documentos = DocumentoSolicitudSerializer(many=True, read_only=True)
     asignaciones = SolicitudAsignacionSerializer(many=True, read_only=True)
+    reasignaciones = SolicitudReasignacionSerializer(many=True, read_only=True)
     nombre_ciudadano = serializers.SerializerMethodField()
     nombre_tramite = serializers.CharField(source="tramite_tipo.nombre", read_only=True)
     nombre_programa = serializers.CharField(
@@ -183,6 +219,7 @@ class SolicitudSerializer(serializers.ModelSerializer):
         source="get_estatus_display", read_only=True
     )
     nombre_dependencia = serializers.SerializerMethodField()
+    dependencia_asignada = DependenciaSimpleSerializer(read_only=True)
     # Alias para mantener compatibilidad con frontend
     fecha_creacion = serializers.DateTimeField(source="created_at", read_only=True)
     fecha_actualizacion = serializers.DateTimeField(source="updated_at", read_only=True)
@@ -198,12 +235,14 @@ class SolicitudSerializer(serializers.ModelSerializer):
             "programa_social",
             "nombre_programa",
             "nombre_dependencia",
+            "dependencia_asignada",
             "estatus",
             "estatus_display",
             "descripcion_ciudadano",
             "comentarios_revision",
             "documentos",
             "asignaciones",
+            "reasignaciones",
             "documentacion_completa",
             "created_at",
             "updated_at",
@@ -220,11 +259,9 @@ class SolicitudSerializer(serializers.ModelSerializer):
 
     def get_nombre_dependencia(self, obj):
         """Nombre de la dependencia a la que está dirigida la solicitud"""
-        # Priorizar programa social si existe, luego trámite
-        if obj.programa_social:
-            return obj.programa_social.dependencia.nombre
-        if obj.tramite_tipo:
-            return obj.tramite_tipo.dependencia.nombre
+        dependencia = obj.dependencia_actual()
+        if dependencia:
+            return dependencia.nombre
         return "N/A"
 
 
@@ -259,6 +296,12 @@ class SolicitudCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         # Crear la solicitud (el estatus se establece automáticamente como PENDIENTE)
+        dependencia = None
+        if validated_data.get("programa_social"):
+            dependencia = validated_data["programa_social"].dependencia
+        elif validated_data.get("tramite_tipo"):
+            dependencia = validated_data["tramite_tipo"].dependencia
+        validated_data["dependencia_asignada"] = dependencia
         solicitud = super().create(validated_data)
 
         # Procesar documentos del request
@@ -321,6 +364,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
     )
     documentacion_completa = serializers.SerializerMethodField()
     nombre_dependencia = serializers.SerializerMethodField()
+    dependencia_asignada = DependenciaSimpleSerializer(read_only=True)
     folio = serializers.CharField(source="id", read_only=True)
     # Alias para mantener compatibilidad con frontend
     fecha_creacion = serializers.DateTimeField(source="created_at", read_only=True)
@@ -346,6 +390,7 @@ class SolicitudListSerializer(serializers.ModelSerializer):
             "fecha_creacion",
             "fecha_actualizacion",
             "nombre_dependencia",
+            "dependencia_asignada",
         ]
 
     def get_nombre_ciudadano(self, obj):
@@ -355,12 +400,32 @@ class SolicitudListSerializer(serializers.ModelSerializer):
         return obj.verificar_documentacion_completa()
 
     def get_nombre_dependencia(self, obj):
-        # Priorizar programa social si existe, luego trámite
-        if obj.programa_social:
-            return obj.programa_social.dependencia.nombre
-        if obj.tramite_tipo:
-            return obj.tramite_tipo.dependencia.nombre
+        dependencia = obj.dependencia_actual()
+        if dependencia:
+            return dependencia.nombre
         return "N/A"
+
+
+class ReasignarSolicitudSerializer(serializers.Serializer):
+    dependencia_id = serializers.IntegerField()
+    motivo = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    notas = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_dependencia_id(self, value):
+        from dependencias.models import Dependencia
+
+        try:
+            dependencia = Dependencia.objects.get(pk=value)
+        except Dependencia.DoesNotExist:
+            raise serializers.ValidationError("Dependencia no encontrada")
+
+        solicitud = self.context.get("solicitud")
+        if solicitud and solicitud.dependencia_asignada_id == dependencia.id:
+            raise serializers.ValidationError(
+                "La solicitud ya está asignada a esta dependencia"
+            )
+
+        return value
 
 
 class SolicitudHistorialSerializer(serializers.Serializer):
