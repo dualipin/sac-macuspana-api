@@ -28,7 +28,6 @@ urlpatterns = [
     path("apoyos/", include("apoyos.api.urls")),
     path("dependencias/", include("dependencias.api.urls")),
     path("notificaciones/", include("notificaciones.api.urls")),
-
 ]
 
 # Servir archivos de media en desarrollo
