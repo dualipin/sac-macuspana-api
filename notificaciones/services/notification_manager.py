@@ -33,6 +33,7 @@ class NotificationManager:
         mensaje: str,
         solicitud: Optional[Solicitud] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        forzar_sin_email: bool = False,
     ) -> Notificacion:
         """
         Crea una notificación y determina si debe enviarse por email según el rol.
@@ -44,12 +45,13 @@ class NotificationManager:
             mensaje: Mensaje descriptivo
             solicitud: Referencia a la solicitud (opcional)
             metadata: Datos adicionales (opcional)
+            forzar_sin_email: Si True, no envía email aunque sea ciudadano (opcional)
 
         Returns:
             Instancia de Notificacion creada
         """
-        # Determinar si requiere email según el rol
-        requiere_email = usuario.rol == Roles.CIUDADANO
+        # Determinar si requiere email según el rol y parámetro
+        requiere_email = usuario.rol == Roles.CIUDADANO and not forzar_sin_email
 
         # Crear notificación en base de datos
         notificacion = Notificacion.objects.create(
@@ -63,7 +65,7 @@ class NotificationManager:
             email_enviado=False,
         )
 
-        # Si es ciudadano, enviar email
+        # Si es ciudadano y no se fuerza sin email, enviar email
         if requiere_email:
             self._enviar_email_async(notificacion)
 
@@ -117,6 +119,14 @@ class NotificationManager:
         # Generar folio para metadata
         folio = f"SOL-{solicitud.id:06d}"
 
+        # Determinar si es programa social o trámite
+        if solicitud.programa_social:
+            nombre_servicio = solicitud.programa_social.nombre
+            tipo_servicio = "Programa Social"
+        else:
+            nombre_servicio = solicitud.tramite_tipo.nombre
+            tipo_servicio = "Trámite"
+
         # Construir título y mensaje
         titulo = f"Actualización de Solicitud {folio}"
         mensaje = self._generar_mensaje_estado(nuevo_estado, solicitud, comentario)
@@ -124,7 +134,8 @@ class NotificationManager:
         metadata = {
             "solicitud_id": solicitud.id,
             "folio": folio,
-            "tramite": solicitud.tramite_tipo.nombre,
+            "tramite": nombre_servicio,
+            "tipo_servicio": tipo_servicio,
             "estado_anterior": solicitud.estatus,
             "estado_nuevo": nuevo_estado,
         }
@@ -150,16 +161,22 @@ class NotificationManager:
         """
         folio = f"SOL-{solicitud.id:06d}"
 
+        # Determinar si es programa social o trámite
+        if solicitud.programa_social:
+            nombre_servicio = solicitud.programa_social.nombre
+        else:
+            nombre_servicio = solicitud.tramite_tipo.nombre
+
         titulo = f"Nueva Solicitud Asignada: {folio}"
         mensaje = (
-            f"Se te ha asignado la solicitud {folio} - {solicitud.tramite_tipo.nombre}. "
+            f"Se te ha asignado la solicitud {folio} - {nombre_servicio}. "
             f"Ciudadano: {solicitud.ciudadano.nombre_completo}."
         )
 
         metadata = {
             "solicitud_id": solicitud.id,
             "folio": folio,
-            "tramite": solicitud.tramite_tipo.nombre,
+            "tramite": nombre_servicio,
             "ciudadano": solicitud.ciudadano.nombre_completo,
             "dependencia": (
                 solicitud.dependencia_actual().nombre
@@ -198,17 +215,23 @@ class NotificationManager:
 
         folio = f"SOL-{solicitud.id:06d}"
 
+        # Determinar si es programa social o trámite
+        if solicitud.programa_social:
+            nombre_servicio = solicitud.programa_social.nombre
+        else:
+            nombre_servicio = solicitud.tramite_tipo.nombre
+
         for funcionario in funcionarios:
             titulo = f"Nueva Solicitud Recibida: {folio}"
             mensaje = (
-                f"Nueva solicitud {folio} - {solicitud.tramite_tipo.nombre} "
+                f"Nueva solicitud {folio} - {nombre_servicio} "
                 f"de {solicitud.ciudadano.nombre_completo}."
             )
 
             metadata = {
                 "solicitud_id": solicitud.id,
                 "folio": folio,
-                "tramite": solicitud.tramite_tipo.nombre,
+                "tramite": nombre_servicio,
                 "ciudadano": solicitud.ciudadano.nombre_completo,
                 "dependencia": dependencia.nombre,
             }
@@ -243,14 +266,19 @@ class NotificationManager:
     ) -> str:
         """Genera mensaje personalizado según el estado."""
         folio = f"SOL-{solicitud.id:06d}"
-        tramite = solicitud.tramite_tipo.nombre
+
+        # Determinar si es programa social o trámite
+        if solicitud.programa_social:
+            nombre_servicio = solicitud.programa_social.nombre
+        else:
+            nombre_servicio = solicitud.tramite_tipo.nombre
 
         mensajes = {
-            "PENDIENTE": f"Tu solicitud {folio} de {tramite} ha sido recibida y está en espera de revisión.",
-            "EN_REVISION": f"Tu solicitud {folio} de {tramite} está siendo revisada por la dependencia correspondiente.",
-            "REQUIERE_INFORMACION": f"Tu solicitud {folio} de {tramite} requiere información adicional.",
-            "APROBADO": f"¡Felicidades! Tu solicitud {folio} de {tramite} ha sido aprobada.",
-            "RECHAZADO": f"Tu solicitud {folio} de {tramite} ha sido rechazada.",
+            "PENDIENTE": f"Tu solicitud {folio} de {nombre_servicio} ha sido recibida y está en espera de revisión.",
+            "EN_REVISION": f"Tu solicitud {folio} de {nombre_servicio} está siendo revisada por la dependencia correspondiente.",
+            "REQUIERE_INFORMACION": f"Tu solicitud {folio} de {nombre_servicio} requiere información adicional.",
+            "APROBADO": f"¡Felicidades! Tu solicitud {folio} de {nombre_servicio} ha sido aprobada.",
+            "RECHAZADO": f"Tu solicitud {folio} de {nombre_servicio} ha sido rechazada.",
         }
 
         mensaje_base = mensajes.get(

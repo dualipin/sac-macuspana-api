@@ -45,9 +45,10 @@ def notificar_cambio_estatus_solicitud(sender, instance, created, **kwargs):
 def notificar_documento_subido(sender, instance, created, **kwargs):
     """
     Notifica cuando se sube un nuevo documento a una solicitud.
+    Solo notificación interna, sin email para evitar spam.
     """
     if created:
-        # Notificar al ciudadano
+        # Notificar al ciudadano (sin email para evitar spam)
         notification_manager.crear_notificacion(
             usuario=instance.solicitud.ciudadano.usuario,
             tipo="DOCUMENTO_RECIBIDO",
@@ -58,6 +59,7 @@ def notificar_documento_subido(sender, instance, created, **kwargs):
                 "requisito": instance.requisito.nombre,
                 "folio": f"SOL-{instance.solicitud.id:06d}",
             },
+            forzar_sin_email=True,  # No enviar email por documentos
         )
 
         # Notificar a los funcionarios asignados (solo bandeja interna)
