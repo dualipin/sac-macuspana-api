@@ -39,8 +39,15 @@ class ProgramaSocialSimpleSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     nombre = serializers.CharField()
     descripcion = serializers.CharField()
+    imagen = serializers.SerializerMethodField()
     dependencia = DependenciaSimpleSerializer(read_only=True)
     requisitos_especificos = RequisitoSimpleSerializer(many=True, read_only=True)
+
+    def get_imagen(self, obj):
+        request = self.context.get("request")
+        if obj.imagen and request:
+            return request.build_absolute_uri(obj.imagen.url)
+        return obj.imagen.url if obj.imagen else None
 
 
 class TramiteSimpleSerializer(serializers.Serializer):
