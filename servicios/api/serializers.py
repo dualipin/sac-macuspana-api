@@ -125,10 +125,20 @@ class TramiteCatalogoListSerializer(serializers.ModelSerializer):
             "nombre",
             "tipo",
             "descripcion",
+            "imagen",
             "nombre_dependencia",
             "cantidad_requisitos",
             "destacado",
         ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["imagen"] = (
+            self.context["request"].build_absolute_uri(instance.imagen.url)
+            if instance.imagen
+            else None
+        )
+        return representation
 
     def get_cantidad_requisitos(self, obj):
         return obj.requisitos.count()
